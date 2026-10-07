@@ -1,7 +1,7 @@
 import {PalmCarDetector} from './palm-car';
 export type Point = {x:number;y:number;z?:number};
 export type Gesture = 'open'|'pinch'|'fist';
-export type Hand = {id:string;points:Point[];gesture:Gesture;candidate:Gesture;since:number;anchor?:Point;lastSeen:number};
+export type Hand = {id:string;side?:'Left'|'Right';points:Point[];gesture:Gesture;candidate:Gesture;since:number;anchor?:Point;lastSeen:number};
 type Particle = Point & {vx:number;vy:number;life:number;max:number};
 type Line = {a:Point;b:Point};
 const distance=(a:Point,b:Point)=>Math.hypot(a.x-b.x,a.y-b.y);
@@ -70,14 +70,14 @@ export function demoPoints(x:number,y:number,fist=false):Point[]{
 }
 export class WebEngine {
  hands:Hand[]=[];particles:Particle[]=[];hiddenUntil=0;last=0;sparkTime=0;
- car:{position:Point;target:Point;handId?:string;lastSeen:number;born:number;strands:Point[][];active:boolean;visibility:number}|null=null;
+ car:{position:Point;target:Point;handId?:string;lastSeen:number;born:number;strands:Point[][];active:boolean;visibility:number;split:number;rightPosition:Point;rightTarget:Point;rightSeen:number;tearing:boolean}|null=null;
  private palms=new Map<string,PalmCarDetector>();
  private tracked=new Map<string,Hand>();
  private nextHandId=0;
  createCar(position:Point,now:number,handId?:string){
   const anchor=this.carAnchor(position);
   const owner=handId??[...this.hands].sort((a,b)=>distance(a.points[9],position)-distance(b.points[9],position))[0]?.id;
-  this.car={position:{...anchor},target:{...anchor},handId:owner,lastSeen:now,born:now,strands:this.hands.map(h=>h.points.map(p=>({...p}))),active:true,visibility:0};
+  this.car={position:{...anchor},target:{...anchor},handId:owner,lastSeen:now,born:now,strands:this.hands.map(h=>h.points.map(p=>({...p}))),active:true,visibility:0,split:0,rightPosition:{...anchor},rightTarget:{...anchor},rightSeen:-Infinity,tearing:false};
   this.burst(this.car.position,90);
  }
  private carAnchor(p:Point):Point{return {x:Math.min(.95,Math.max(.05,p.x)),y:Math.min(.92,Math.max(.08,p.y-.09))};}
@@ -87,7 +87,7 @@ export class WebEngine {
   for(const detector of this.palms.values())detector.suppressUntilRelease();
   if(resetTracking){this.tracked.clear();this.palms.clear();}
  }
- update(inputs:{id:string;points:Point[];gesturePoints?:Point[];imagePoints?:Point[];gesture?:Gesture;tray?:boolean}[],now:number){
+ update(inputs:{id:string;side?:'Left'|'Right';points:Point[];gesturePoints?:Point[];imagePoints?:Point[];gesture?:Gesture;tray?:boolean}[],now:number){
   // Preserve identity across short tracking gaps and handedness-label changes.
   if(inputs.length===0)for(const [id,hand] of this.tracked)if(now-hand.lastSeen>2500){this.tracked.delete(id);this.palms.delete(id);}
   const previous=this.hands;
@@ -97,18 +97,19 @@ export class WebEngine {
    if(input.gesture!==undefined)old=this.tracked.get(input.id);
    else{
     const maxDistance=Math.max(.16,distance(input.points[0],input.points[9])*1.7);
-    old=[...this.tracked.values()].filter(h=>!used.has(h.id)&&distance(h.points[0],input.points[0])<maxDistance).sort((a,b)=>distance(a.points[0],input.points[0])-distance(b.points[0],input.points[0]))[0];
+    old=[...this.tracked.values()].filter(h=>!used.has(h.id)&&(!input.side||!h.side||input.side===h.side)&&distance(h.points[0],input.points[0])<maxDistance).sort((a,b)=>distance(a.points[0],input.points[0])-distance(b.points[0],input.points[0]))[0];
    }
    const id=old?.id??(input.gesture!==undefined?input.id:`tracked-${++this.nextHandId}`);used.add(id);
    const smoothing=old?1-Math.exp(-Math.min(now-old.lastSeen,100)/65):1;
    const points=input.points.map((p,i)=>old?mix(old.points[i],p,smoothing):p);
    const next=input.gesture??classify(input.gesturePoints??input.points,old?.gesture??'open');
    const hand:Hand=old??{id,points,gesture:next,candidate:next,since:now,lastSeen:now,anchor:next==='pinch'?{...points[9]}:undefined};
+   hand.side=input.side??hand.side;
    if(old&&now-old.lastSeen>250){hand.candidate=next;hand.since=now;}
    if(next!==hand.candidate){hand.candidate=next;hand.since=now;}
    if(now-hand.since>100&&hand.gesture!==next){if(next==='fist')hand.points.forEach(p=>this.burst(p,8));hand.gesture=next;hand.anchor=next==='pinch'?{...hand.points[9]}:undefined;}
    let detector=this.palms.get(id);if(!detector){detector=new PalmCarDetector();this.palms.set(id,detector);}
-   const pose=input.tray!==undefined?input.tray&&next==='open':isTrayPose(input.gesturePoints??input.points,detector.active,input.imagePoints??input.points);
+   const pose=input.side?input.side==='Left'&&(input.tray!==undefined?input.tray&&next==='open':handClosure(input.gesturePoints??input.points)<(detector.active?.82:.72)):input.tray!==undefined?input.tray&&next==='open':isTrayPose(input.gesturePoints??input.points,detector.active,input.imagePoints??input.points);
    if(now>this.hiddenUntil)detector.sample(pose,now);
    hand.points=points;hand.lastSeen=now;this.tracked.set(id,hand);return hand;
   });
@@ -125,6 +126,13 @@ export class WebEngine {
     if(owner)this.car.handId=owner.id;
    }
    if(owner){this.car.target=this.carAnchor(mix(owner.points[0],owner.points[9],.65));this.car.lastSeen=now;}
+   const right=this.hands.find(hand=>hand.side==='Right'&&hand.gesture!=='fist');
+   if(right&&this.car.active){
+    this.car.rightTarget=this.carAnchor(mix(right.points[0],right.points[9],.65));
+    if(!this.car.tearing)this.burst(mix(this.car.position,this.car.rightTarget,.5),35);
+    this.car.rightSeen=now;
+   }
+   this.car.tearing=this.car.active&&now-this.car.rightSeen<400;
   }
  }
  draw(ctx:CanvasRenderingContext2D,w:number,h:number,now:number,color:string,glow:number,idle:boolean){
@@ -133,6 +141,8 @@ export class WebEngine {
   if(this.car){
    const carDt=Math.max(0,elapsed);
    this.car.position=mix(this.car.position,this.car.target,1-Math.exp(-carDt/.055));
+   this.car.rightPosition=mix(this.car.rightPosition,this.car.rightTarget,1-Math.exp(-carDt/.075));
+   this.car.split+=(Number(this.car.tearing)-this.car.split)*(1-Math.exp(-carDt/.2));
    this.car.visibility+=(Number(this.car.active)-this.car.visibility)*(1-Math.exp(-carDt/.14));
    if(!this.car.active&&this.car.visibility<.005)this.car=null;
   }
@@ -180,7 +190,13 @@ export class WebEngine {
    }}ctx.restore();
   }
   const width=Math.min(w*.47,390),scale=width/300;
-  ctx.save();ctx.translate(car.position.x*w,car.position.y*h+Math.sin(now*.0016)*4);ctx.scale(scale* Math.max(.01,ease),scale*Math.max(.01,ease));
+  const split=car.split;
+  const fragments=split>.002?[-1,1]:[0];
+  for(const half of fragments){
+  const intact={x:car.position.x*w,y:car.position.y*h};
+  const target=half<0?{x:intact.x+width/4,y:intact.y}:{x:car.rightPosition.x*w-width/4,y:car.rightPosition.y*h};
+  ctx.save();ctx.translate(intact.x+(target.x-intact.x)*split,intact.y+(target.y-intact.y)*split+Math.sin(now*.0016)*2);ctx.scale(scale*Math.max(.01,ease),scale*Math.max(.01,ease));
+  if(half){ctx.beginPath();ctx.moveTo(0,-180);for(const [x,y] of [[0,-73],[8,-52],[-7,-29],[6,-8],[-5,14],[0,39],[0,180]])ctx.lineTo(x,y);ctx.lineTo(half*400,180);ctx.lineTo(half*400,-180);ctx.closePath();ctx.clip();}
   ctx.globalAlpha=ease*car.visibility;ctx.lineWidth=1.8;ctx.strokeStyle=color;ctx.shadowColor=color;ctx.shadowBlur=glow*16;
   const path=(points:number[][],close=false)=>{points.forEach(([x,y],i)=>i?ctx.lineTo(x,y):ctx.moveTo(x,y));if(close)ctx.closePath();};
   // Low coupe body, sloped windscreen, wheel arches and offset far-side silhouette.
@@ -197,7 +213,10 @@ export class WebEngine {
   ctx.stroke();
   ctx.strokeStyle='#bd9bff';ctx.shadowColor='#bd9bff';ctx.lineWidth=2;ctx.beginPath();path([[-70,39],[65,39]]);path([[-110,-26],[-50,-35],[-18,-73],[59,-73]]);ctx.stroke();
   ctx.strokeStyle='#edffff';ctx.shadowColor=color;ctx.shadowBlur=glow*25;ctx.lineWidth=3;ctx.beginPath();path([[125,-3],[144,-1]]);ctx.stroke();
-  if(progress<1){ctx.strokeStyle=color;ctx.globalAlpha=(1-progress)*.7*car.visibility;ctx.lineWidth=1;ctx.beginPath();ctx.ellipse(0,14,180*progress+30,70*progress+15,0,0,Math.PI*2);ctx.stroke();}
+  if(half){ctx.strokeStyle='#edffff';ctx.lineWidth=2.5;ctx.globalAlpha=split*car.visibility;ctx.beginPath();path([[0,-73],[8,-52],[-7,-29],[6,-8],[-5,14],[0,39]]);ctx.stroke();}
+  if(progress<1&&!half){ctx.strokeStyle=color;ctx.globalAlpha=(1-progress)*.7*car.visibility;ctx.lineWidth=1;ctx.beginPath();ctx.ellipse(0,14,180*progress+30,70*progress+15,0,0,Math.PI*2);ctx.stroke();}
   ctx.restore();
+  }
+  if(split>.05&&car.tearing&&now-this.sparkTime>100){this.sparkTime=now;this.burst(mix(car.position,car.rightPosition,.5),3);}
  }
 }
