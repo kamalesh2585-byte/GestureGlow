@@ -1,0 +1,38 @@
+import { chromium } from 'playwright';
+import assert from 'node:assert/strict';
+const browser=await chromium.launch({channel:'chrome',headless:true,args:['--use-fake-ui-for-media-stream','--use-fake-device-for-media-stream']});
+const page=await browser.newPage({viewport:{width:1440,height:1000}});
+const errors=[];page.on('pageerror',e=>errors.push(e.message));page.on('console',msg=>{if(msg.type()==='error')console.log('Browser:',msg.text());});
+await page.goto(process.env.PLAYGROUND_URL || 'http://localhost:5173');
+await page.getByRole('button',{name:'Mouse demo',exact:true}).click();
+await page.getByText('Mouse demo active',{exact:true}).waitFor();
+await page.waitForTimeout(300);
+assert.match(await page.locator('.stage-bottom').innerText(),/01 \/ 02 HANDS/);
+const canvas=page.locator('canvas');const box=await canvas.boundingBox();
+await page.mouse.move(box.x+box.width*.6,box.y+box.height*.5);await page.mouse.down();await page.waitForTimeout(300);
+assert.equal(await page.locator('.gesture-row.current h3').innerText(),'Pinch & pull');await page.mouse.up();
+await page.getByRole('button',{name:'Close fist',exact:true}).click();await page.waitForTimeout(300);
+assert.equal(await page.locator('.gesture-row.current h3').innerText(),'Close your fist');
+await page.getByRole('button',{name:'Open palm',exact:true}).click();await page.getByLabel('Two hands',{exact:true}).check();await page.waitForTimeout(300);
+assert.match(await page.locator('.stage-bottom').innerText(),/02 \/ 02 HANDS/);
+await page.getByRole('button',{name:'Choose #a78bfa'}).click();assert.equal(await page.getByRole('button',{name:'Choose #a78bfa'}).getAttribute('aria-pressed'),'true');
+await page.getByRole('button',{name:'Clear effects'}).click();await page.waitForTimeout(1000);
+await page.getByRole('button',{name:'Create car',exact:true}).click();await page.getByRole('status').filter({hasText:'Neon car created'}).waitFor();
+await page.waitForTimeout(1000);await page.screenshot({path:'browser-car.png',fullPage:true});
+await page.getByRole('button',{name:'Clear effects'}).click();await page.waitForTimeout(1000);assert.equal(await page.locator('.car-notice').count(),0);
+await page.mouse.move(box.x+box.width*.4,box.y+box.height*.5);await page.waitForTimeout(300);
+for(const x of [.55,.7,.55,.4]){await page.mouse.move(box.x+box.width*x,box.y+box.height*.5);await page.waitForTimeout(120);}
+await page.getByRole('status').filter({hasText:'Neon car created'}).waitFor({timeout:3000});
+await page.screenshot({path:'browser-desktop.png',fullPage:true});
+await page.setViewportSize({width:390,height:844});await page.waitForTimeout(200);
+assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));await page.screenshot({path:'browser-mobile.png',fullPage:true});
+await page.getByRole('button',{name:'How to play'}).click();assert.ok(await page.locator('.help-panel').isVisible());
+if(process.argv.includes('--demo-only')){assert.deepEqual(errors,[]);console.log('PASS: car creation by button and actual pointer shake, clear, existing demo gestures, two hands, colour and mobile layout.');await browser.close();process.exit(0);}
+await page.getByRole('button',{name:'Start Camera',exact:true}).click();
+await page.waitForFunction(()=>!document.querySelector('.stage-bottom')?.textContent?.includes('Preparing'),null,{timeout:60000});
+await page.waitForTimeout(2000);
+const cameraStatus=await page.locator('.stage-bottom').innerText();console.log('Camera status:',cameraStatus);if(await page.locator('.error').count())console.log('Camera error:',await page.locator('.error').innerText());assert.match(cameraStatus,/Show your hand|Hand detected/);
+assert.ok(await page.locator('video').evaluate(v=>v.currentTime>0));
+await page.getByRole('button',{name:'Stop Camera'}).click();assert.match(await page.locator('.stage-bottom').innerText(),/Camera is off/);
+assert.deepEqual(errors,[]);console.log('PASS: demo gestures, two hands, colour, clear, mobile overflow, guide, MediaPipe worker initialization, fake camera and stop; no browser exceptions.');
+await browser.close();
