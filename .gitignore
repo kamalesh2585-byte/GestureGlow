@@ -4,3 +4,4 @@ dist/
 .sites-runtime/
 public/mediapipe/
 browser-*.png
+.qa/

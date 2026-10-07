@@ -1,0 +1,30 @@
+﻿import assert from 'node:assert/strict';
+import {createServer} from 'vite';
+const server=await createServer({server:{middlewareMode:true},appType:'custom'});
+try{
+ const {WebEngine,demoPoints,classify,isTrayPose}=await server.ssrLoadModule('/src/engine.ts');
+ const {PalmCarDetector}=await server.ssrLoadModule('/src/palm-car.ts');
+ const upright=demoPoints(.5,.5),closed=demoPoints(.5,.5,true);
+ const worldTray=upright.map(p=>({x:p.x,y:.5,z:p.y-.5}));
+ const screenTray=upright.map(p=>({x:.5+(p.y-.5)*.7,y:.5+(p.x-.5)*.3}));
+ const input=(tray,id='Left',dx=0,dy=0)=>({id,points:(tray?screenTray:upright).map(p=>({...p,x:p.x+dx,y:p.y+dy})),gesturePoints:tray?worldTray:upright});
+ const ctx=new Proxy({},{get:()=>()=>{},set:()=>true});
+ const draw=(engine,start,end)=>{for(let t=start;t<=end;t+=16)engine.draw(ctx,1000,600,t,'#65e7ed',1,false);};
+ assert.equal(isTrayPose(upright),false);assert.equal(isTrayPose(worldTray),true);assert.equal(isTrayPose(closed),false);
+ assert.equal(isTrayPose(upright,false,screenTray),true,'Visible tray pose must work even with incorrect depth');
+ assert.equal(isTrayPose(worldTray,false,upright),false,'Visible upright hand must stay a web even with incorrect depth');
+ assert.equal(classify(worldTray,'open'),'open');
+ const engine=new WebEngine();engine.update([input(false)],10);engine.update([input(false)],200);assert.equal(engine.car,null,'An upright palm must show the web');
+ engine.update([input(true)],250);engine.update([input(true)],410);assert.ok(engine.car,'A tray-like palm must create the car');
+ draw(engine,420,900);assert.ok(engine.car.visibility>.9);
+ const start={...engine.car.position},born=engine.car.born;
+ engine.update([input(true,'Right',.15,-.1)],940);draw(engine,940,1000);
+ assert.ok(engine.car.target.x>start.x&&engine.car.target.y<start.y);assert.ok(engine.car.position.x>start.x&&engine.car.position.x<engine.car.target.x);assert.equal(engine.car.born,born);
+ engine.update([input(false,'Left')],1040);engine.update([input(false,'Left')],1260);assert.equal(engine.car.active,true,'Brief pose changes should not flicker');
+ engine.update([input(false,'Left')],1500);assert.equal(engine.car.active,false);draw(engine,1500,2500);assert.equal(engine.car,null,'Upright hand must restore the web automatically');
+ const lost=new WebEngine();lost.update([input(true)],10);lost.update([input(true)],180);draw(lost,180,600);lost.update([],620);lost.update([],800);assert.equal(lost.car.active,true);lost.update([],1100);assert.equal(lost.car.active,false);draw(lost,1100,2200);assert.equal(lost.car,null,'An absent hand must not leave a permanent car');
+ const cleared=new WebEngine();cleared.update([input(true)],10);cleared.update([input(true)],180);cleared.clear(200);cleared.update([input(true)],1100);cleared.update([input(true)],1300);assert.equal(cleared.car,null);cleared.update([input(false)],1400);cleared.update([input(true)],1600);cleared.update([input(true)],1800);assert.ok(cleared.car);
+ const pose=new PalmCarDetector();pose.sample(true,0);assert.equal(pose.sample(true,160),true);assert.equal(pose.sample(false,200),true);assert.equal(pose.sample(true,350),true);pose.sample(false,400);assert.equal(pose.sample(false,850),false);
+ const slow=new WebEngine();slow.update([input(true)],10);slow.update([input(true)],3500);assert.ok(slow.car,'A slow device must not reset the pose on every frame');draw(slow,3510,4000);slow.update([input(false)],4050);slow.update([input(false)],7000);slow.draw(ctx,1000,600,10000,'#65e7ed',1,false);assert.equal(slow.car,null,'Fade must finish after elapsed time even with sparse frames');
+ console.log('PASS: tray pose only, upright web, smooth following and fade, pose hysteresis, short-loss grace, absent-hand return to web, clear and rearm.');
+}finally{await server.close();}

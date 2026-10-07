@@ -10,13 +10,13 @@ self.onmessage = async ({ data }) => {
       tracker = await HandLandmarker.createFromOptions(files, {
         baseOptions: { modelAssetPath: 'https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task' },
         runningMode: 'VIDEO', numHands: 2,
-        minHandDetectionConfidence: .6, minHandPresenceConfidence: .6, minTrackingConfidence: .6,
+        minHandDetectionConfidence: .45, minHandPresenceConfidence: .45, minTrackingConfidence: .45,
       });
       self.postMessage({ type: 'ready' });
     } else if (data.type === 'frame' && tracker) {
       try {
         const result = tracker.detectForVideo(data.bitmap, data.time);
-        self.postMessage({ type: 'result', landmarks: result.landmarks, handedness: result.handedness });
+        self.postMessage({ type: 'result', landmarks: result.landmarks, worldLandmarks: result.worldLandmarks, handedness: result.handedness });
       } finally { data.bitmap.close(); }
     }
   } catch (error) {
