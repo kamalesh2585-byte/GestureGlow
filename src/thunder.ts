@@ -9,11 +9,11 @@ export class ClapDetector {
  hint='Show both hands';
  reset(){this.armed=false;this.time=0;this.lastClap=-Infinity;this.farDistance=0;this.distance=0;this.size=0;this.approach=-Infinity;this.hint='Show both hands';}
  sample(hands:ClapHand[],now:number):Point|null {
-  if(now-this.time>700)this.armed=false;
+  if(now-this.time>1200)this.armed=false;
   if(hands.length!==2||hands.some(h=>h.points.length!==21)){
    // At contact one palm often hides the other. Accept this only after a
    // measured approach near contact, never simply because tracking vanished.
-   if(hands.length===1&&this.armed&&now-this.time<350&&now-this.approach<350&&this.distance<this.size*2.3&&this.farDistance-this.distance>this.size*.6&&now-this.lastClap>900)return this.fire(now);
+   if(hands.length===1&&this.armed&&now-this.time<450&&now-this.approach<450&&this.distance<this.size*2.3&&this.farDistance-this.distance>this.size*.6&&now-this.lastClap>900)return this.fire(now);
    this.hint=this.armed?'Keep both hands visible':'Show both hands';return null;
   }
   const [a,b]=hands.map(h=>palm(h.points));
@@ -27,14 +27,17 @@ export class ClapDetector {
   if(!this.armed)this.size=observedSize;
   const distance=Math.hypot(a.x-b.x,a.y-b.y);
   this.center={x:(a.x+b.x)/2,y:(a.y+b.y)/2};
-  if(now-this.lastClap>900&&distance>observedSize*2.3){
+  if(now-this.lastClap>900&&distance>observedSize*1.6){
    if(!this.armed){this.armed=true;this.farDistance=distance;this.size=observedSize;}
    this.farDistance=Math.max(this.farDistance,distance);
   }
   if(this.armed&&this.distance-distance>this.size*.06)this.approach=now;
   this.time=now;this.distance=distance;
-  const approaching=now-this.approach<650&&this.farDistance-distance>this.size*.6;
-  if(this.armed&&approaching&&distance<Math.max(this.size*1.65,this.farDistance*.28)&&now-this.lastClap>900)return this.fire(now);
+  const approaching=now-this.approach<1000&&this.farDistance-distance>this.size*.35;
+  const palmEdges=[0,5,9,13,17];
+  const edgeGap=Math.min(...palmEdges.flatMap(i=>palmEdges.map(j=>Math.hypot(hands[0].points[i].x-hands[1].points[j].x,hands[0].points[i].y-hands[1].points[j].y))));
+  const contact=distance<Math.max(this.size*1.65,this.farDistance*.28)||edgeGap<this.size*.45;
+  if(this.armed&&approaching&&contact&&now-this.lastClap>900)return this.fire(now);
   this.hint=this.armed?'Ready - bring your palms together':'Move both hands apart, then clap';
   return null;
  }
@@ -67,7 +70,7 @@ export class ThunderEffect {
   const origin=project({x:0,y:0,z:0}),halo=ctx.createRadialGradient(origin.x,origin.y,0,origin.x,origin.y,scale*.8);
   halo.addColorStop(0,`rgba(180,215,255,${Math.exp(-t*5)*.7})`);halo.addColorStop(.25,`rgba(80,120,255,${Math.exp(-t*4)*.3})`);halo.addColorStop(1,'rgba(80,120,255,0)');ctx.fillStyle=halo;ctx.fillRect(0,0,w,h);
   const intensity=Math.exp(-t*3.3)*(.7+.3*Math.cos(t*55)**2);
-  for(const path of this.bolts){const points=path.map(project);for(const [width,color,alpha] of [[9,'#635bff',.22],[3,'#8dcfff',.85],[1,'#effbff',1]] as const){ctx.strokeStyle=color;ctx.lineWidth=width*points[0].depth;ctx.globalAlpha=intensity*alpha;ctx.beginPath();points.forEach((p,i)=>i?ctx.lineTo(p.x,p.y):ctx.moveTo(p.x,p.y));ctx.stroke();}}
+  for(const path of this.bolts){const points=path.map(project);ctx.globalCompositeOperation='source-over';ctx.strokeStyle='#14193d';ctx.lineWidth=12*points[0].depth;ctx.globalAlpha=intensity*.65;ctx.beginPath();points.forEach((p,i)=>i?ctx.lineTo(p.x,p.y):ctx.moveTo(p.x,p.y));ctx.stroke();ctx.globalCompositeOperation='lighter';for(const [width,color,alpha] of [[9,'#635bff',.22],[3,'#8dcfff',.85],[1,'#effbff',1]] as const){ctx.strokeStyle=color;ctx.lineWidth=width*points[0].depth;ctx.globalAlpha=intensity*alpha;ctx.beginPath();points.forEach((p,i)=>i?ctx.lineTo(p.x,p.y):ctx.moveTo(p.x,p.y));ctx.stroke();}}
   for(let ring=0;ring<2;ring++){ctx.globalAlpha=Math.max(0,1-t/1.2)*.6;ctx.lineWidth=1.7;ctx.strokeStyle=ring?'#aeb3ff':'#8deaff';ctx.beginPath();for(let i=0;i<=80;i++){const a=i*Math.PI*2/80,r=t*(1.1+ring*.45),p=project({x:Math.cos(a)*r,y:Math.sin(a)*r*.3,z:Math.sin(a)*r});if(i)ctx.lineTo(p.x,p.y);else ctx.moveTo(p.x,p.y);}ctx.stroke();}
   for(const v of this.sparks){const p=project({x:v.x*t,y:v.y*t+t*t*.18,z:v.z*t});ctx.globalAlpha=Math.max(0,1-t/1.65);ctx.fillStyle=v.z>0?'#91a9ff':'#d8faff';ctx.beginPath();ctx.arc(p.x,p.y,Math.max(.6,2.2*p.depth*(1-t/2)),0,Math.PI*2);ctx.fill();}
   ctx.restore();
