@@ -4,7 +4,7 @@ import {createServer} from 'vite';
 
 // Scripted landmarks pass through the real webcam view, worker message handler,
 // mirror/crop transform, pose detector and canvas. No demo tray/gesture overrides.
-const vite=await createServer({server:{middlewareMode:true},appType:'custom'});
+const vite=await createServer({configFile:false,optimizeDeps:{noDiscovery:true,entries:[]},server:{middlewareMode:true},appType:'custom'});
 const {demoPoints}=await vite.ssrLoadModule('/src/engine.ts');
 const upright=demoPoints(.5,.5);
 const horizontal=upright.map(p=>({x:.5+(p.y-.5)*.7,y:.5+(p.x-.5)*.3,z:0}));
@@ -51,7 +51,7 @@ try{
  await car.waitFor({timeout:4000});
  await page.evaluate(()=>window.__pose='none');await car.waitFor({state:'hidden',timeout:4000});
  await page.getByRole('button',{name:'Stop Camera',exact:true}).click();
- assert.deepEqual(errors,[]);console.log('PASS: real camera UI path using raw landmarks: upright web, horizontal car despite noisy depth, mirrored car movement, return to web and hand-loss recovery.');
+ assert.deepEqual(errors,[]);console.log('PASS: real camera UI path using raw landmarks: upright web, horizontal car despite noisy depth, mirrored movement and hand-loss recovery.');
 }catch(error){
  if(page)console.log(await page.evaluate(()=>({pose:window.__pose,frames:window.__frames,status:document.querySelector('.stage-bottom')?.textContent})));throw error;
 }finally{await browser.close();}

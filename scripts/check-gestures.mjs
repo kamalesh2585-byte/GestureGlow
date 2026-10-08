@@ -1,6 +1,6 @@
 ﻿import assert from 'node:assert/strict';
 import {createServer} from 'vite';
-const server=await createServer({server:{middlewareMode:true},appType:'custom'});
+const server=await createServer({configFile:false,optimizeDeps:{noDiscovery:true,entries:[]},server:{middlewareMode:true},appType:'custom'});
 try{
  const {WebEngine,demoPoints,classify,isTrayPose}=await server.ssrLoadModule('/src/engine.ts');
  const {PalmCarDetector}=await server.ssrLoadModule('/src/palm-car.ts');
@@ -26,5 +26,5 @@ try{
  const cleared=new WebEngine();cleared.update([input(true)],10);cleared.update([input(true)],180);cleared.clear(200);cleared.update([input(true)],1100);cleared.update([input(true)],1300);assert.equal(cleared.car,null);cleared.update([input(false)],1400);cleared.update([input(true)],1600);cleared.update([input(true)],1800);assert.ok(cleared.car);
  const pose=new PalmCarDetector();pose.sample(true,0);assert.equal(pose.sample(true,160),true);assert.equal(pose.sample(false,200),true);assert.equal(pose.sample(true,350),true);pose.sample(false,400);assert.equal(pose.sample(false,850),false);
  const slow=new WebEngine();slow.update([input(true)],10);slow.update([input(true)],3500);assert.ok(slow.car,'A slow device must not reset the pose on every frame');draw(slow,3510,4000);slow.update([input(false)],4050);slow.update([input(false)],7000);slow.draw(ctx,1000,600,10000,'#65e7ed',1,false);assert.equal(slow.car,null,'Fade must finish after elapsed time even with sparse frames');
- console.log('PASS: tray pose only, upright web, smooth following and fade, pose hysteresis, short-loss grace, absent-hand return to web, clear and rearm.');
+ console.log('PASS: tray pose, upright web, smoothing, tracking loss, clear and rearm.');
 }finally{await server.close();}

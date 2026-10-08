@@ -1,45 +1,40 @@
 # Hand Web Playground
 
-A React + TypeScript + Vite playground with real two-hand MediaPipe tracking and Canvas effects. Camera frames are processed locally in a web worker and never uploaded.
+React + TypeScript + Vite with real two-hand MediaPipe tracking and Canvas effects. Camera frames stay in your browser.
 
-## Run it
-
-Install Node.js 20.19+ or 22.12+, then open a terminal in this folder:
+## Run
 
 ```sh
 npm install
 npm run dev
 ```
 
-Open the localhost URL printed by Vite. Click **Start Camera** and allow camera permission. The first start downloads the hand model from Google's storage, so an internet connection is required. Version-pinned MediaPipe JavaScript and WASM are served locally; the setup scripts copy them from the installed package automatically. Chrome or Edge are recommended. Stop Camera releases the webcam.
+Open the printed localhost URL, click Start Camera, and allow camera access. Internet is required for the model download.
 
 ## Play
 
-- Upright open palm: show the web. Hold your open palm flat like a tray to show the car, matching the reference pose. Turn your hand upright again to return to the web automatically.
-- Move your flat palm: the car follows smoothly above your hand. Brief tracking loss is tolerated for 400ms; a longer absence fades the car out instead of leaving it stuck on screen. Mouse demo lets you move it with your pointer.
-- Pinch thumb and index, then pull: stretch strands from the captured palm anchor.
-- Close fist: dissolve the web into particles. Open again to rebuild it.
-- Two hands: bridge their fingertips with crossing strands and sparks.
-- The tray detector prioritizes the visible sideways, relatively flat hand shape from aspect-correct image landmarks, with 3D finger curl to reject tight fists. It accepts relaxed, slightly cupped fingers and supports either hand without requiring an exact depth angle. Entry requires 120ms; exit takes 400ms to prevent flicker. Car and web crossfade automatically. Clear effects removes the car without immediately respawning it; turn your hand upright and then flat to rearm it.
-- Mouse demo: move the pointer, hold to pinch, and use Close fist / Two hands controls. Works without a camera or the tracking model. Touch dragging also works.
-- Mouse demo starts with the web. Use Palm up to try the car and Show web to switch back. No camera is needed for demo mode.
-- Clear effects clears particles and briefly resets the web; visible hands weave it again.
+- Upright palm: glowing web.
+- Hold your palm flat like a tray: the car appears and smoothly follows your hand. Turn it upright to restore the web.
+- Pinch and pull: stretch a strand.
+- Close your fist: dissolve the web into particles.
+- Show two hands: connecting web strands and sparks.
+- Mouse demo: move the pointer, hold to pinch, and use Palm up / Show web, Close fist, and Two hands controls.
+- Clear effects: removes effects; release the tray pose and show it again to rearm the car.
 
-The camera is mirrored with `object-fit: cover`. Landmark coordinates use the same mirror and crop transform. Tray recognition uses image coordinates corrected by the camera's aspect ratio, so resizing the stage cannot change the detected pose. Finger gestures use MediaPipe world landmarks. Confidence thresholds are .45 to tolerate partly occluded hands. Hand identity follows wrist proximity and survives delayed frames. Glow is batched, hidden webs are skipped, and particles are bounded to 260. Car movement and crossfades use elapsed time so slower frame rates do not stretch transitions. The car reveals over .9 seconds.
+Tracking uses smoothing, 120ms pose entry and 400ms loss tolerance. Mirrored landmarks match the webcam crop. Tray detection uses aspect-correct image landmarks and finger curl, tolerating relaxed cupped palms and noisy depth.
 
-## Production
+## Build and verification
 
 ```sh
 npm run build
 npm run preview
+node scripts/check-gestures.mjs
+npm run check:browser
+node scripts/check-camera-poses.mjs
 ```
 
-Deploy `dist` with an HTTPS static host. Camera access requires HTTPS or localhost. A phone accessing a laptop over plain HTTP cannot use the camera; use an HTTPS deployment instead. Camera and tracking availability depend on browser permissions and device performance.
+Browser checks require Chrome and a running dev server. They verify gestures, model initialization with a simulated camera, layout, and the raw-landmark camera path. Physical webcam tracking needs testing on your device.
 
-Official API documentation consulted: https://developers.google.com/edge/mediapipe/solutions/vision/hand_landmarker/web_js
+Deploy dist to an HTTPS static host for phone camera access. Plain HTTP over the local network cannot access the camera.
 
-## Browser verification
-
-Run `node scripts/check-gestures.mjs` to verify tray detection from raw 3D landmarks, upright web, smooth movement and fading, tracking-loss grace, clearing and rearming. With Google Chrome installed and the dev server running, `npm run check:browser` verifies tray/web switching, gestures, two hands, colour controls, responsive sizing, guide, real model initialization with a simulated camera and camera stop. It saves desktop and mobile screenshots. A physical hand and webcam are still needed to assess tracking quality and alignment on your device.
-
-`node scripts/check-camera-poses.mjs` separately exercises the actual camera UI with scripted raw landmarks, including incorrect depth estimates, mirror/crop mapping, car movement measured from canvas pixels, upright return to web, and tracking loss. It does not force demo gestures or tray flags. This integration check cannot substitute for a physical webcam test.
+Official documentation: https://developers.google.com/edge/mediapipe/solutions/vision/hand_landmarker/web_js

@@ -1,0 +1,11 @@
+﻿import {chromium} from 'playwright';
+import assert from 'node:assert/strict';
+const browser=await chromium.launch({channel:'chrome',headless:true,args:['--use-fake-ui-for-media-stream','--use-fake-device-for-media-stream']});
+try{
+ const page=await browser.newPage(),errors=[];page.on('pageerror',e=>errors.push(e.message));
+ await page.addInitScript(()=>{window.Worker=class{constructor(){window.trackerTest=this;}postMessage(data){if(data.type==='init')setTimeout(()=>this.onmessage?.({data:{type:'ready'}}),0);if(data.bitmap)data.bitmap.close();}terminate(){}};});
+ await page.goto(process.env.PLAYGROUND_URL||'http://localhost:5174');await page.getByRole('button',{name:'Start Camera',exact:true}).first().click();await page.waitForFunction(()=>document.querySelector('.clap-hint'));
+ const emit=async(gap,one=false)=>{await page.evaluate(async({gap,one})=>{const {demoPoints}=await import('/src/engine.ts');const points=[demoPoints(.5-gap/2,.5),demoPoints(.5+gap/2,.5)];window.trackerTest.onmessage({data:{type:'result',landmarks:one?points.slice(0,1):points,worldLandmarks:one?points.slice(0,1):points,handedness:[[{categoryName:'Left'}],[{categoryName:'Right'}]]}});},{gap,one});};
+ await emit(.65);await page.waitForTimeout(280);await emit(.25);await page.waitForTimeout(280);await emit(.08);assert.equal(await page.locator('.stage').getAttribute('data-thunder-hits'),'1');await emit(.08);assert.equal(await page.locator('.stage').getAttribute('data-thunder-hits'),'1');
+ await page.getByRole('button',{name:'Open air board',exact:true}).click();await page.waitForTimeout(950);await emit(.65);console.log('far',await page.locator('.clap-hint').innerText());await page.waitForTimeout(100);await emit(.26);console.log('near',await page.locator('.clap-hint').innerText(),await page.locator('video').evaluate(v=>[v.videoWidth,v.videoHeight]));await page.waitForTimeout(100);await emit(.26,true);assert.equal(await page.locator('.stage').getAttribute('data-thunder-hits'),'2');assert.ok(await page.locator('.air-notice').isVisible());assert.deepEqual(errors,[]);console.log('PASS: camera worker results trigger thunder with slower frames, held palms do not retrigger, occluded clap works over air board; no browser errors');
+}finally{await browser.close();}
